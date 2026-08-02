@@ -23,7 +23,7 @@ informed_consent(){
     echo 
     echo "1. Install required packages"
     echo "    apt-get update"
-    echo "    apt-get install tmux ffmpeg inotify-tools sox"
+    echo "    apt-get install tmux ffmpeg inotify-tools sox jq"
     echo
     echo "2. Make all .sh files in this project executable."
     echo "     eg. chmod +x *.sh"
