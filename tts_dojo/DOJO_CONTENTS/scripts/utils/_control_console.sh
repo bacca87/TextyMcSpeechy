@@ -95,6 +95,9 @@ time_until_full() {
 
 kill_session() {
     tmux kill-session
+    # stop the docker container too: killing the tmux session alone leaves the
+    # training process running headless inside the container
+    docker stop textymcspeechy-piper >/dev/null 2>&1
 }
 
 # Define the target pane to send keys to

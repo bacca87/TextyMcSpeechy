@@ -55,15 +55,29 @@ if [ -z "$onnx_path" ]; then
 fi
 
 # Generate the audio file with Piper in the docker container
-docker exec -it textymcspeechy-piper bash -c "cd /app/tts_dojo/${DOJO_NAME}/scripts && \
+docker exec textymcspeechy-piper bash -c "cd /app/tts_dojo/${DOJO_NAME}/scripts && \
 echo \"$text\" | piper -m \"$onnx_path\" --output_file \"$output_file\""
+result=$?
+if [ $result -ne 0 ] || [ ! -f "$output_file" ]; then
+    echo "ERROR: piper synthesis failed (exit code $result). Check that the model file is valid."
+    exit 1
+fi
 
 # Inform the user and attempt to play the audio file
 echo "Audio generated and saved to $output_file"
 
-# Attempt to play the audio file with aplay
-if command -v aplay &> /dev/null; then
+# Attempt to play the audio file (WSLg provides pulseaudio for audio output)
+if [ -z "$PULSE_SERVER" ] && [ -S /mnt/wslg/PulseServer ]; then
+    export PULSE_SERVER=/mnt/wslg/PulseServer
+fi
+
+# Attempt to play the audio file
+if command -v paplay &> /dev/null; then
+    paplay "$output_file"
+elif command -v play &> /dev/null; then
+    play "$output_file" >/dev/null 2>&1
+elif command -v aplay &> /dev/null; then
     aplay "$output_file"
 else
-    echo "aplay command not found. Cannot play the audio."
+    echo "No audio player found (paplay/play/aplay). Install pulseaudio-utils or alsa-utils."
 fi

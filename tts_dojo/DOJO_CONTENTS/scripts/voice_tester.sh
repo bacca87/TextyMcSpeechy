@@ -168,7 +168,8 @@ say_text() {
     echo $onnx_path > voice_tester.log
 
     if [[ -n "$onnx_path" ]]; then
-        bash tts.sh "$text_to_say" "$onnx_path" >/dev/null 2>&1
+        echo "=== $(date +%H:%M:%S) say: $text_to_say ===" >> voice_tester.log
+        bash tts.sh "$text_to_say" "$onnx_path" >> voice_tester.log 2>&1
     else
         echo "No .onnx model found in $voice_dir"
     fi
