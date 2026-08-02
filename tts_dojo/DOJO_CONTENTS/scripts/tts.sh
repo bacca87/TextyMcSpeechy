@@ -73,11 +73,11 @@ fi
 
 # Attempt to play the audio file
 if command -v paplay &> /dev/null; then
-    paplay "$output_file"
+    timeout 15 paplay "$output_file" || echo "warning: audio playback timed out or failed (file is still valid)"
 elif command -v play &> /dev/null; then
-    play "$output_file" >/dev/null 2>&1
+    timeout 15 play "$output_file" >/dev/null 2>&1 || echo "warning: audio playback timed out or failed (file is still valid)"
 elif command -v aplay &> /dev/null; then
-    aplay "$output_file"
+    timeout 15 aplay "$output_file" || echo "warning: audio playback timed out or failed (file is still valid)"
 else
     echo "No audio player found (paplay/play/aplay). Install pulseaudio-utils or alsa-utils."
 fi

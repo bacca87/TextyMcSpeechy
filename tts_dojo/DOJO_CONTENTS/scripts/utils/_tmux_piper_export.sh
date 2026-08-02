@@ -62,14 +62,25 @@ update_json() {
     # Extract the base name of the file (without extension)
     local dataset_name=$(basename "$filename" .onnx.json)
 
+    # Optional inference overrides, applied only when set (eg from SETTINGS.txt).
+    # Piper uses these values whenever the client does not pass explicit CLI flags,
+    # so tuning them here (eg lower noise_w for steadier durations) applies to
+    # every downstream app without changing how the voice is exported.
+    local jq_program='.audio.quality = $quality_value | .language.code = $lang_code | .dataset = $dataset'
+    local jq_args=(--arg lang_code "$language_code" --arg quality_value "$quality" --arg dataset "$dataset_name")
+
+    if [ -n "${INFERENCE_NOISE_SCALE:-}" ]; then
+        jq_program="$jq_program | .inference.noise_scale = $INFERENCE_NOISE_SCALE"
+    fi
+    if [ -n "${INFERENCE_LENGTH_SCALE:-}" ]; then
+        jq_program="$jq_program | .inference.length_scale = $INFERENCE_LENGTH_SCALE"
+    fi
+    if [ -n "${INFERENCE_NOISE_W:-}" ]; then
+        jq_program="$jq_program | .inference.noise_w = $INFERENCE_NOISE_W"
+    fi
+
     # Use jq to update the JSON
-    jq --arg lang_code "$language_code" \
-       --arg quality_value "$quality" \
-       --arg dataset "$dataset_name" \
-       '.audio.quality = $quality_value |
-        .language.code = $lang_code |
-        .dataset = $dataset' \
-       "$filename" > tmp.json && mv tmp.json "$filename" && chown 1000:1000 "$filename"
+    jq "${jq_args[@]}" "$jq_program" "$filename" > tmp.json && mv tmp.json "$filename" && chown 1000:1000 "$filename"
 }
 
 
