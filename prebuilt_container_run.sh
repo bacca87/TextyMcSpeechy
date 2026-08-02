@@ -16,12 +16,13 @@ else
     fail=1
 fi
 
-# Check that NVIDIA container toolkit is installed
-if dpkg -l | grep -q nvidia-container-toolkit; then
+# Check that an nvidia runtime is available in docker
+if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -qi nvidia; then
     :
 else
-    echo "WARNING! -- Required package NVIDIA Container Toolkit is not installed."
-    echo "install instructions can be found here:"
+    echo "WARNING! -- Required nvidia runtime not available in docker."
+    echo "On Windows, enable GPU support in Docker Desktop Settings > Resources > WSL Integration."
+    echo "On Linux, install the NVIDIA Container Toolkit:"
     echo "https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html"
     echo
     echo
