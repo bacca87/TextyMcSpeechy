@@ -22,7 +22,8 @@ RUN python3.10 -m venv .venv && \
     /app/piper/src/python/.venv/bin/pip install build && \
     /app/piper/src/python/.venv/bin/pip install -e . && \
     /app/piper/src/python/.venv/bin/pip install --no-deps piper-tts && \ 
-    /app/piper/src/python/.venv/bin/pip install cython==0.29.37 piper-phonemize==1.1.0 librosa==0.10.2.post1 numpy==1.23.5 onnxruntime>=1.20.1  torch==1.13.1 pytorch-lightning==1.7.7 torchmetrics==0.11.4 && \
+    /app/piper/src/python/.venv/bin/pip install cython==0.29.37 piper-phonemize==1.1.0 librosa==0.10.2.post1 numpy==1.23.5 onnxruntime>=1.20.1 pytorch-lightning==1.7.7 torchmetrics==0.11.4 && \
+    /app/piper/src/python/.venv/bin/pip install --index-url https://download.pytorch.org/whl/cu118 torch==2.0.1 && \
     /app/piper/src/python/.venv/bin/python -m build && \
     bash /app/piper/src/python/build_monotonic_align.sh
 
@@ -30,6 +31,21 @@ RUN python3.10 -m venv .venv && \
 WORKDIR /
 RUN groupadd --gid $USER_GID $USERNAME && useradd -m -s /bin/bash -u $USER_UID -g $USER_GID $USERNAME && \
 chown -R $USER_UID:$USER_GID /home/$USERNAME && usermod --uid $USER_UID --gid $USER_GID $USERNAME 
+
+# Pin setuptools to a version that still ships pkg_resources (removed in setuptools>=81),
+# which pytorch-lightning 1.7.7 imports at runtime.
+RUN /app/piper/src/python/.venv/bin/pip install setuptools==75.3.2
+
+# Upgrade pytorch-lightning to 1.9.5: required for torch 2.x compatibility
+# (PL 1.7.7 fails on RTX 40-series with torch 2.0: MisconfigurationException on LRScheduler API check)
+RUN /app/piper/src/python/.venv/bin/pip install pytorch-lightning==1.9.5
+
+# Install the onnx package: torch 2.x's torch.onnx.export requires it
+# (torch 1.13 bundled its own serializer; torch 2.0 does not)
+RUN /app/piper/src/python/.venv/bin/pip install onnx
+
+# Install pathvalidate: required by the piper CLI (piper.__main__)
+RUN /app/piper/src/python/.venv/bin/pip install pathvalidate
 
 
 # Set environment variables for CUDA and virtual environment
