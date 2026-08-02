@@ -112,8 +112,8 @@ docker exec textymcspeechy-piper bash -c "cd /app/piper/src/python \
 "
 }
 
-# purge checkpoint folder to ensure consistent location
-rm -r $LIGHTNING_LOGS_LOCATION >/dev/null 2>&1
+# lightning_logs is intentionally NOT purged between runs so that TensorBoard
+# keeps the full training history (each run creates a new version_N directory).
 echo "Train from scratch = $TRAIN_FROM_SCRATCH"
 echo "           Quality = $quality_str" 
 

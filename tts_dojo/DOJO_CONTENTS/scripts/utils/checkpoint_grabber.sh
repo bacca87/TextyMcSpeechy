@@ -71,7 +71,7 @@ fi
 
 clear # clear the screen
 # load constants from values sourced from SETTINGS, supply defaults if not specified
-PIPER_STEP=${PIPER_SAVE_CHECKPOINT_EVERY_N_EPOCHS:5}
+PIPER_STEP=${PIPER_SAVE_CHECKPOINT_EVERY_N_EPOCHS:-5}
 MIN_GB=${SETTINGS_GRABBER_MINIMUM_DRIVE_SPACE_GB:-20}
 MIN_GB_WARNING=${DRIVE_SPACE_WARNING_THRESHOLD_GB:-10}
 MINIMUM_DRIVE_SPACE=$((MIN_GB * 1024 * 1024))  # 20 GB in KB
@@ -222,7 +222,7 @@ update_grabber_status() {
     echo -e "                 started at : $start_time_human                  running for : ${running_time_hours}h ${running_time_minutes}m"
 
     echo -e "   Avg. time per checkpoint : ${avg_time_per_checkpoint_min}m ${avg_time_per_checkpoint_sec}s"
-    echo -e "      Last checkpoint saved : $(basename "$last_checkpoint_file") (${last_checkpoint_size} MB)   Last export took : $last_export_duration_seconds seconds"   
+    echo -e "      Last checkpoint seen : $(basename "$last_checkpoint_file") (${last_checkpoint_size} MB)   Last export took : $last_export_duration_seconds seconds"   
     echo -e "       Next epoch # to save : $next_epoch_to_save"
     echo -e "       Time until next save : ${estimated_time_hours}h ${estimated_time_minutes}m ${estimated_time_seconds}s"
     echo -e "checkpoints until next save : $checkpoints_until_save"
@@ -287,15 +287,44 @@ toggle_checkpoint_saving(){
 
 
 check_for_new_checkpoint(){
-# monitors a file that inotify creates to signal arrival of a new checkpoint file
+# monitors a file that inotify creates to signal arrival of a new checkpoint file.
+# falls back to polling the checkpoints directory for the newest checkpoint file,
+# which is required on filesystems where inotify events are not delivered
+# (eg WSL2 mounts of Windows drives such as /mnt/c NTFS).
+    resolve_checkpoints_dir
     if [ -e $NEW_CHECKPOINT_SIGNAL_FILE ]; then
-        newest_checkpoint=$(cat $NEW_CHECKPOINT_SIGNAL_FILE) 
+        signal_checkpoint=$(cat $NEW_CHECKPOINT_SIGNAL_FILE)
+        if [ -n "$signal_checkpoint" ]; then
+            newest_checkpoint=$signal_checkpoint
+        fi
         if [ -f "$newest_checkpoint" ] && [ "$newest_checkpoint" != "$last_file_processed" ];  then
             process_file $newest_checkpoint
             last_file_processed=$newest_checkpoint
         fi
     else
        echo "ERROR- could not find signal file in $NEW_CHECKPOINT_SIGNAL_FILE"
+    fi
+
+    # Polling fallback: detect the newest checkpoint file in the checkpoints directory.
+    newest_checkpoint_in_dir=$(ls -1t "$checkpoints_dir"/*.ckpt 2>/dev/null | head -n 1)
+    if [ -n "$newest_checkpoint_in_dir" ]; then
+        newest_checkpoint=$newest_checkpoint_in_dir
+        if [ "$newest_checkpoint_in_dir" != "$last_file_processed" ]; then
+            process_file "$newest_checkpoint_in_dir"
+            last_file_processed="$newest_checkpoint_in_dir"
+        fi
+    fi
+}
+
+resolve_checkpoints_dir() {
+# points checkpoints_dir at the newest lightning_logs version directory.
+# version directories accumulate when training is resumed without purging lightning_logs.
+    local newest_version_dir
+    newest_version_dir=$(ls -1dt "../training_folder/lightning_logs"/version_*/ 2>/dev/null | head -n 1)
+    if [ -n "$newest_version_dir" ]; then
+        checkpoints_dir="${newest_version_dir}checkpoints"
+    else
+        checkpoints_dir="../training_folder/lightning_logs/version_${version_number}/checkpoints"
     fi
 }
 
@@ -457,8 +486,28 @@ start_time_human=$(date +"%I:%M %p" -d @$start_time)
 show_training_dir_empty_message
 
 # wait for piper to create checkpoints_dir
+# shows live status while waiting (elapsed time + training process health)
+resolve_checkpoints_dir
+wait_start=$(date +%s)
 while [ ! -d "$checkpoints_dir" ]; do
-    sleep 5
+    resolve_checkpoints_dir
+    wait_elapsed=$(( $(date +%s) - wait_start ))
+    wait_min=$((wait_elapsed / 60))
+    wait_sec=$((wait_elapsed % 60))
+    training_alive=$(docker exec textymcspeechy-piper ps aux 2>/dev/null | grep -c "[p]iper_train")
+    if [ "$training_alive" -gt 0 ]; then
+        training_status="piper_train is running"
+    else
+        training_status="WARNING: piper_train process not found - training may have crashed"
+    fi
+    clear
+    echo "Waiting for piper to create the checkpoints directory..."
+    echo "Elapsed: ${wait_min}m ${wait_sec}s   |   $training_status"
+    echo
+    echo "The checkpoints directory appears when piper saves its first checkpoint"
+    echo "(every ${PIPER_STEP} epochs). Epoch pace is visible in TensorBoard at"
+    echo "http://localhost:6006 or in the PIPER TRAINING pane output."
+    sleep 10
 done
 
 show_training_dir_created_message

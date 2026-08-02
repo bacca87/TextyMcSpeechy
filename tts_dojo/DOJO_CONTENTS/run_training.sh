@@ -138,7 +138,15 @@ confirm_or_change_dataset(){
 
 
 check_and_copy_ckpt() {
-    local source_folder="$LIGHTNING_LOGS_CHECKPOINT_FOLDER"
+    # use the newest lightning_logs version directory (versions accumulate across runs)
+    local newest_version_dir
+    newest_version_dir=$(ls -1dt "training_folder/lightning_logs"/version_*/ 2>/dev/null | head -n 1)
+    local source_folder
+    if [ -n "$newest_version_dir" ]; then
+        source_folder="${newest_version_dir}checkpoints"
+    else
+        source_folder="$LIGHTNING_LOGS_CHECKPOINT_FOLDER"
+    fi
     local dest_folder="$VOICE_CHECKPOINTS_FOLDER"
 
     # Check if .ckpt file exists in source folder
