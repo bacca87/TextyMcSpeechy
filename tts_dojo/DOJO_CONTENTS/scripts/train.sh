@@ -110,12 +110,19 @@ set_train_from_scratch(){
 
 
 empty_checkpoint_folder(){
-# Copy checkpoint file from prior run to allow user to resume from there and empty the folder 
-    cp "$LIGHTNING_LOGS_LOCATION/version_0/checkpoints/*.ckpt" "./$VOICE_CHECKPOINTS_DIRNAME/" >/dev/null 2>&1
+# Copy checkpoint file from prior run to allow user to resume from there and empty the folder
+    local ckpt_dir="$LIGHTNING_LOGS_LOCATION/version_0/checkpoints"
+    if ls "$ckpt_dir"/*.ckpt >/dev/null 2>&1; then
+        cp "$ckpt_dir"/*.ckpt "./$VOICE_CHECKPOINTS_DIRNAME/" >/dev/null 2>&1
+    fi
     sleep 1
-    # note: this command is duplicated in piper_training.sh in order to allow quck restarts in the tmux session
-    # (eg. recovering from a memory allocation error)
-    rm -r $LIGHTNING_LOGS_LOCATION
+    if ls "./$VOICE_CHECKPOINTS_DIRNAME"/*.ckpt >/dev/null 2>&1; then
+        # note: this command is duplicated in piper_training.sh in order to allow quck restarts in the tmux session
+        # (eg. recovering from a memory allocation error)
+        rm -r "$LIGHTNING_LOGS_LOCATION"
+    else
+        echo "WARNING: nessun checkpoint salvato in $VOICE_CHECKPOINTS_DIRNAME - NON elimino $LIGHTNING_LOGS_LOCATION"
+    fi
 }
 
 calculate_directory_size() {
