@@ -101,6 +101,14 @@ fi
 TRAINING_DIR="/app/tts_dojo/$DOJO_NAME/training_folder"
 DATASET_DIR="/app/tts_dojo/$DOJO_NAME/target_voice_dataset"
 
+# cache location: CACHE_DIR from SETTINGS.txt (default ../training_folder/cache,
+# relative to the dojo) or an absolute path (e.g. a fast docker volume)
+CACHE_DIR=${CACHE_DIR:-../training_folder/cache}
+case "$CACHE_DIR" in
+    /*) DOCKER_CACHE_DIR="$CACHE_DIR" ;;
+    *)  DOCKER_CACHE_DIR="/app/tts_dojo/$DOJO_NAME/${CACHE_DIR#../}" ;;
+esac
+
 echo "Train from scratch = $TRAIN_FROM_SCRATCH"
 echo "           Quality = $quality_str"
 echo "   espeak voice    = $ESPEAK_LANGUAGE_IDENTIFIER"
@@ -112,7 +120,7 @@ cat > ../training_folder/fit_params.json <<EOF
     "voice_name": "$VOICE_NAME",
     "csv_path": "$DATASET_DIR/metadata.csv",
     "audio_dir": "$DATASET_DIR/wav",
-    "cache_dir": "$TRAINING_DIR/cache",
+    "cache_dir": "$DOCKER_CACHE_DIR",
     "config_path": "$TRAINING_DIR/config.json",
     "espeak_voice": "$ESPEAK_LANGUAGE_IDENTIFIER",
     "sample_rate": "$sample_rate",
