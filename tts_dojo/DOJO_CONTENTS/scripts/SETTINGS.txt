@@ -1,4 +1,4 @@
-# Espeak language used by piper_train.preprocess
+# Espeak language used by the dataset tools
 SETTINGS_ESPEAK_LANGUAGE=""
 
 # Piper training settings (piper1-gpl / piper.train fit)

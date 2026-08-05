@@ -494,9 +494,9 @@ while [ ! -d "$checkpoints_dir" ]; do
     wait_elapsed=$(( $(date +%s) - wait_start ))
     wait_min=$((wait_elapsed / 60))
     wait_sec=$((wait_elapsed % 60))
-    training_alive=$(docker exec textymcspeechy-piper ps aux 2>/dev/null | grep -c "[p]iper_train")
+    training_alive=$(docker exec textymcspeechy-piper ps aux 2>/dev/null | grep -c "[p]iper\.train\|[p]iper_fit")
     if [ "$training_alive" -gt 0 ]; then
-        training_status="piper_train is running"
+        training_status="piper training is running"
     else
         training_status="WARNING: piper_train process not found - training may have crashed"
     fi
