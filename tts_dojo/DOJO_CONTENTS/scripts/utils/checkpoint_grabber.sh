@@ -242,7 +242,7 @@ save_checkpoint(){
 # copies current checkpoint file to <name>_dojo/voice_checkpoints and exports 
     local file_path=$newest_checkpoint
     local filename=$(basename "$file_path")
-    if [[ $filename =~ epoch=([0-9]+)-step=[0-9]+\.ckpt ]]; then
+    if [[ $filename =~ ^epoch=([0-9]+)-.+\.ckpt$ ]]; then
         local epoch=${BASH_REMATCH[1]}
           if [ ! -f "$save_dir/$(basename "$file_path")" ]; then
                while lsof "$file_path" >/dev/null 2>&1; do
@@ -333,7 +333,7 @@ process_file() {
 # handle the arrival of a new checkpoint file
     local file_path=$1
     local filename=$(basename "$file_path")
-    if [[ $filename =~ epoch=([0-9]+)-step=[0-9]+\.ckpt ]]; then
+    if [[ $filename =~ ^epoch=([0-9]+)-.+\.ckpt$ ]]; then
         local epoch=${BASH_REMATCH[1]}
 
         if [ "$first_epoch" -eq -1 ]; then

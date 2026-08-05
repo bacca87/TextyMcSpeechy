@@ -670,9 +670,9 @@ show_setup(){
     echo -e "            Abort if below minimum drive space: ${CYAN}$MINIMUM_DRIVE_SPACE_GB${RESET} GB"
     echo -e "             warn about low drive space within: ${CYAN}$DRIVE_SPACE_WARNING_THRESHOLD_GB${RESET} GB of minimum"
     echo 
-    echo -e "        ${PURPLE}PIPER TRAINING SETTINGS (piper_train)${RESET}"
-    echo -e "                                  --batch-size: ${CYAN}$PIPER_BATCH_SIZE${RESET}"
-    echo -e "                           --checkpoint-epochs: ${CYAN}$PIPER_SAVE_CHECKPOINT_EVERY_N_EPOCHS${RESET}"
+    echo -e "        ${PURPLE}PIPER TRAINING SETTINGS (piper.train fit)${RESET}"
+    echo -e "                                  --data.batch_size: ${CYAN}$PIPER_BATCH_SIZE${RESET}"
+    echo -e "                                 --data.validation_split: ${CYAN}$VALIDATION_SPLIT${RESET}"
 
 }
 

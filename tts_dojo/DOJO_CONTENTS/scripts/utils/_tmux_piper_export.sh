@@ -96,7 +96,8 @@ create_piper_voice(){
     container_destination=/app/tts_dojo/${dojo_name}/tts_voices/$(dirname "$destination" | xargs basename)/$(basename "$destination")
 
     # run the export script on the docker container (only creates .onnx file from .ckpt)
-    docker exec textymcspeechy-piper bash -c "cd /app/piper/src/python && python3 -m piper_train.export_onnx $container_checkpoint $container_destination" 
+    # (wrapper handles legacy-checkpoint loading and the legacy onnx exporter)
+    docker exec textymcspeechy-piper bash -c "cd /app/piper && python3 /app/tts_dojo/${dojo_name}/scripts/utils/export_onnx.py --checkpoint $container_checkpoint --output-file $container_destination"
     
     # finish the export by copying .onnx.json file to destination folder on host
     cp ../training_folder/config.json "$destination.json"

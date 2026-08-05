@@ -1,5 +1,7 @@
-# Use a more minimal base image with CUDA 11.8 support and Ubuntu 22.04
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04 AS base
+# TextyMcSpeechy training image aligned to OHF-Voice/piper1-gpl (piper.train, Lightning 2.x)
+# Tested stack (smoke test, 2026-08): torch 2.13+cu130, lightning 2.6.5, cython 3.x,
+# espeakbridge built from source (bundled espeak-ng), monotonic_align built.
+FROM nvidia/cuda:12.6.2-runtime-ubuntu24.04 AS base
 ARG USERNAME=nonrootuser
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
@@ -7,55 +9,39 @@ ARG USER_GID=$USER_UID
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies, Python, Pip, and known working version of Piper without revision history to minimize container size.
+# System dependencies + piper1-gpl pinned to the exact commit used for the smoke test
 RUN apt-get update && apt-get install -y \
-    python3.10 python3.10-venv python3.10-dev \
+    python3.12 python3.12-venv python3.12-dev \
     git espeak-ng tmux ffmpeg inotify-tools \
-    build-essential && \
-    git init piper && cd piper && git fetch --depth 1 https://github.com/rhasspy/piper.git a0f09cdf9155010a45c243bc8a4286b94f286ef4 && git checkout FETCH_HEAD &&\
-    rm -rf /var/lib/apt/lists/* 
+    build-essential cmake ninja-build && \
+    git init piper && cd piper && git fetch --depth 1 https://github.com/OHF-Voice/piper1-gpl.git ffb62233b04dd0b04f005cd7c1f879eb9b0889fd && git checkout FETCH_HEAD && \
+    rm -rf /var/lib/apt/lists/*
 
-# Create virtual environment, install piper without deps, manually install piper deps with known working versions
-WORKDIR /app/piper/src/python
-RUN python3.10 -m venv .venv && \
-    /app/piper/src/python/.venv/bin/pip install --upgrade pip==24.0 wheel setuptools && \
-    /app/piper/src/python/.venv/bin/pip install build && \
-    /app/piper/src/python/.venv/bin/pip install -e . && \
-    /app/piper/src/python/.venv/bin/pip install --no-deps piper-tts && \ 
-    /app/piper/src/python/.venv/bin/pip install cython==0.29.37 piper-phonemize==1.1.0 librosa==0.10.2.post1 numpy==1.23.5 onnxruntime>=1.20.1 pytorch-lightning==1.7.7 torchmetrics==0.11.4 && \
-    /app/piper/src/python/.venv/bin/pip install --index-url https://download.pytorch.org/whl/cu118 torch==2.0.1 && \
-    /app/piper/src/python/.venv/bin/python -m build && \
-    bash /app/piper/src/python/build_monotonic_align.sh
+# Virtual environment + training stack (torch first, then the rest of [train] extras)
+WORKDIR /app/piper
+RUN python3.12 -m venv .venv && \
+    /app/piper/.venv/bin/pip install --upgrade pip wheel setuptools && \
+    /app/piper/.venv/bin/pip install torch==2.13.0 && \
+    /app/piper/.venv/bin/pip install -e ".[train]" onnxscript torchaudio scikit-build && \
+    CC=/usr/bin/gcc CXX=/usr/bin/g++ /app/piper/.venv/bin/python setup.py build_ext --inplace && \
+    bash /app/piper/build_monotonic_align.sh
 
-#create non root user 
+# create non root user (ubuntu24.04 base already ships uid/gid 1000: reuse them)
 WORKDIR /
-RUN groupadd --gid $USER_GID $USERNAME && useradd -m -s /bin/bash -u $USER_UID -g $USER_GID $USERNAME && \
-chown -R $USER_UID:$USER_GID /home/$USERNAME && usermod --uid $USER_UID --gid $USER_GID $USERNAME 
+RUN if ! getent group $USER_GID >/dev/null; then groupadd --gid $USER_GID $USERNAME; fi && \
+    if ! getent passwd $USER_UID >/dev/null; then \
+        useradd -m -s /bin/bash -u $USER_UID -g $USER_GID $USERNAME; \
+    else \
+        usermod -l $USERNAME -d /home/$USERNAME -m "$(getent passwd $USER_UID | cut -d: -f1)"; \
+    fi && \
+    chown -R $USER_UID:$USER_GID /home/$USERNAME
 
-# Pin setuptools to a version that still ships pkg_resources (removed in setuptools>=81),
-# which pytorch-lightning 1.7.7 imports at runtime.
-RUN /app/piper/src/python/.venv/bin/pip install setuptools==75.3.2
-
-# Upgrade pytorch-lightning to 1.9.5: required for torch 2.x compatibility
-# (PL 1.7.7 fails on RTX 40-series with torch 2.0: MisconfigurationException on LRScheduler API check)
-RUN /app/piper/src/python/.venv/bin/pip install pytorch-lightning==1.9.5
-
-# Install the onnx package: torch 2.x's torch.onnx.export requires it
-# (torch 1.13 bundled its own serializer; torch 2.0 does not)
-RUN /app/piper/src/python/.venv/bin/pip install onnx
-
-# Install pathvalidate: required by the piper CLI (piper.__main__)
-RUN /app/piper/src/python/.venv/bin/pip install pathvalidate
-
-
-# Set environment variables for CUDA and virtual environment
-ENV PATH="/app/piper/src/python/.venv/bin:$PATH"
-ENV CUDA_VISIBLE_DEVICES=0  
+# Environment
+ENV PATH="/app/piper/.venv/bin:$PATH"
+ENV CUDA_VISIBLE_DEVICES=0
 
 # Mount volume
 VOLUME ["/app/tts_dojo"]
 
-# Set default command to bash
+# Default command
 CMD ["/bin/bash"]
-
-
