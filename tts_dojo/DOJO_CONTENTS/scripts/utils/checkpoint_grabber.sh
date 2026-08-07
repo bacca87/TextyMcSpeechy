@@ -242,7 +242,7 @@ save_checkpoint(){
 # copies current checkpoint file to <name>_dojo/voice_checkpoints and exports 
     local file_path=$newest_checkpoint
     local filename=$(basename "$file_path")
-    if [[ $filename =~ epoch=([0-9]+)-step=[0-9]+\.ckpt ]]; then
+    if [[ $filename =~ ^epoch=([0-9]+)-.+\.ckpt$ ]]; then
         local epoch=${BASH_REMATCH[1]}
           if [ ! -f "$save_dir/$(basename "$file_path")" ]; then
                while lsof "$file_path" >/dev/null 2>&1; do
@@ -333,7 +333,7 @@ process_file() {
 # handle the arrival of a new checkpoint file
     local file_path=$1
     local filename=$(basename "$file_path")
-    if [[ $filename =~ epoch=([0-9]+)-step=[0-9]+\.ckpt ]]; then
+    if [[ $filename =~ ^epoch=([0-9]+)-.+\.ckpt$ ]]; then
         local epoch=${BASH_REMATCH[1]}
 
         if [ "$first_epoch" -eq -1 ]; then
@@ -494,9 +494,9 @@ while [ ! -d "$checkpoints_dir" ]; do
     wait_elapsed=$(( $(date +%s) - wait_start ))
     wait_min=$((wait_elapsed / 60))
     wait_sec=$((wait_elapsed % 60))
-    training_alive=$(docker exec textymcspeechy-piper ps aux 2>/dev/null | grep -c "[p]iper_train")
+    training_alive=$(docker exec textymcspeechy-piper ps aux 2>/dev/null | grep -c "[p]iper\.train\|[p]iper_fit")
     if [ "$training_alive" -gt 0 ]; then
-        training_status="piper_train is running"
+        training_status="piper training is running"
     else
         training_status="WARNING: piper_train process not found - training may have crashed"
     fi

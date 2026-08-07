@@ -1,15 +1,19 @@
 #!/bin/bash
-#preprocess_dataset.sh:   Configures and runs piper_train.preprocess inside the textymcspeechy-piper docker container
+#preprocess_dataset.sh:  Validates the linked dataset for piper1-gpl training.
+# piper1-gpl (piper.train) does phoneme/audio caching itself during `fit`
+# (VitsDataModule.prepare_data, using --data.cache_dir). The old separate
+# piper_train.preprocess step no longer exists: this script checks the dataset
+# and lets the user purge an old cache.
 
 DOJO_NAME=$(basename $PWD) # Get from <voice_name>_dojo
 SETTINGS_FILE="SETTINGS.txt"
 CACHE_DIR="../training_folder/cache"
 CONFIG_JSON="../training_folder/config.json"
-DATASET_JSONL="../training_folder/dataset.jsonl"
 SAMPLING_RATE_FILE=".SAMPLING_RATE"
 MAX_WORKERS_FILE=".MAX_WORKERS"
-MASTER_SETTINGS_FILE="../../DOJO_CONTENTS/scripts/$SETTINGS_FILE" #relative to this dojo's scripts dir
-DATASET_CONF_FILE="../target_voice_dataset/dataset.conf" 
+DATASET_CONF_FILE="../target_voice_dataset/dataset.conf"
+METADATA_CSV="../target_voice_dataset/metadata.csv"
+AUDIO_DIR="../target_voice_dataset/wav"
 
 cd scripts # needed to ensure relative paths are built properly
 set +e # Exit immediately if any command returns a non-zero exit code
@@ -19,7 +23,7 @@ if [[ -f $SAMPLING_RATE_FILE ]]; then
     SAMPLING_RATE=$(cat $SAMPLING_RATE_FILE)
 else
     echo "Error: .SAMPLING_RATE file not found."
-    exit 1 
+    exit 1
 fi
 
 if [[ -f $MAX_WORKERS_FILE ]]; then
@@ -35,8 +39,7 @@ if [ -e $DATASET_CONF_FILE ]; then
 else
     echo "$0 - dataset.conf not found"
     echo "     expected location: $DATASET_CONF_FILE"
-    echo 
-    echo "press <enter> to exit"
+    echo
     exit 1
 fi
 
@@ -62,24 +65,23 @@ if [[ "$missing" == true ]]; then
     echo
     echo "    Your dataset configuration file (dataset.conf) is outdated and needs to be updated."
     echo "        ESPEAK_LANGUAGE_IDENTIFIER must be set to the espeak-ng language identifier for the language of your dataset"
-    echo "        eg: ESPEAK_LANGUAGE_IDENTIFIER=en-us"
+    echo "        eg: ESPEAK_LANGUAGE_IDENTIFIER=it"
     echo
     echo "    PIPER_FILENAME_PREFIX must be set to the language code Piper uses to name language files"
-    echo "        eg: PIPER_FILENAME_PREFIX=en_US"
+    echo "        eg: PIPER_FILENAME_PREFIX=it_IT"
     echo
     echo "    either add these values to your dataset.conf file manually, or run:"
     echo
     echo "        DATASETS/create_dataset.sh <dataset_folder>"
     echo
     echo "    to rebuild the datasets.conf file."
-    echo 
+    echo
     echo "Exiting"
     exit 1
 fi
 
-
 # load settings
-if [ -e "$SETTINGS_FILE" ]; then 
+if [ -e "$SETTINGS_FILE" ]; then
     source "$SETTINGS_FILE"  #loads vars from SETTINGS.txt
 else
     echo "could not find $SETTINGS_FILE. Exiting."
@@ -88,8 +90,8 @@ fi
 
 
 previously_preprocessed() {
-# Check for files from previous preprocessing run
-    if [[ -d "$CACHE_DIR" && -f "$CONFIG_JSON" && -f "$DATASET_JSONL" ]]; then
+# Check for files from a previous training run (the fit caches phonemes/audio/spec here)
+    if [[ -d "$CACHE_DIR" && -f "$CONFIG_JSON" ]]; then
         echo "TRUE"
     else
         echo "FALSE"
@@ -97,10 +99,9 @@ previously_preprocessed() {
 }
 
 purge_training_folder(){
-# removes files from previous training runs
-   rm -r $CACHE_DIR
-   rm $CONFIG_JSON
-   rm $DATASET_JSONL
+# removes cache from previous training runs
+   rm -rf $CACHE_DIR
+   rm -f $CONFIG_JSON
 }
 
 
@@ -118,19 +119,19 @@ trap 'error_handler' ERR SIGINT SIGTERM
 function check_preprocessed_data() {
     if [[ "$(previously_preprocessed)" == "TRUE" ]]; then
         echo
-        echo "        training_folder directory already contains a pre-processed dataset. Please choose an option:"
+        echo "        training_folder directory already contains cached training data. Please choose an option:"
         echo
-        echo "            [1] Skip preprocessing (recommended if resuming a previous training session)" 
-        echo "            [2] Preprocess the dataset again  (important if you have changed pronunciation rules) "
-        echo             
+        echo "            [1] Skip cleanup (recommended if resuming a previous training session)"
+        echo "            [2] Clear the cache and rebuild it  (important if you have changed pronunciation rules) "
+        echo
         echo -ne "            [1,2]? "
         read -r redo
 
         if [[ -z "$redo" || "$redo" == "1" ]]; then
-            echo "Skipping preprocessing."
+            echo "Skipping cleanup."
             exit 0
         elif [[ "$redo" == "2" ]]; then
-            echo "Cleaning training_folder prior to preprocessing..."
+            echo "Cleaning training_folder prior to training..."
             purge_training_folder
             return 0
         else
@@ -138,51 +139,58 @@ function check_preprocessed_data() {
             check_preprocessed_data  # Recursively ask again if input is invalid
         fi
     else
-        echo "training folder is clean, proceeding with preprocessing."
+        echo "training folder is clean, proceeding."
     fi
 }
-
 
 
 # MAIN PROGRAM ********************************************************************************
 
 check_preprocessed_data
-echo 
-echo "" 
-echo -e "       Auto-configured sampling rate: $SAMPLING_RATE"         
+echo
+echo ""
+echo -e "       Auto-configured sampling rate: $SAMPLING_RATE"
 echo -e "    Calculated value for max-workers: $MAX_WORKERS"
 echo
 echo
 
 echo "Configuring Piper for language: ${ESPEAK_LANGUAGE_IDENTIFIER}"
-echo "Running piper_train.preprocess in docker container"
-echo
+echo "Validating dataset..."
 echo
 
-# Run the piper preprocessing script inside of the textymspeechy-piper docker container.
-# note:  /app/piper/src/python refers to a path inside the container. 
-docker exec textymcspeechy-piper bash -c "
-  cd /app/piper/src/python && \
-  python3 -m piper_train.preprocess \
-    --language ${ESPEAK_LANGUAGE_IDENTIFIER} \
-    --input-dir \"/app/tts_dojo/${DOJO_NAME}/target_voice_dataset\" \
-    --output-dir \"/app/tts_dojo/${DOJO_NAME}/training_folder\" \
-    --dataset-format ljspeech \
-    --single-speaker \
-    --sample-rate ${SAMPLING_RATE} \
-    --max-workers ${MAX_WORKERS}
-"
-result=$?
-if [ $result -eq 0 ];then 
+# validate the dataset files the fit command will consume
+if [ ! -f "$METADATA_CSV" ]; then
+    echo "Error: metadata file not found: $METADATA_CSV"
+    read
+    exit 1
+fi
+
+if [ ! -d "$AUDIO_DIR" ]; then
+    echo "Error: audio directory not found: $AUDIO_DIR"
+    read
+    exit 1
+fi
+
+metadata_lines=$(wc -l < "$METADATA_CSV" | tr -d ' ')
+audio_files=$(find "$AUDIO_DIR" -name "*.wav" | wc -l | tr -d ' ')
+echo "    metadata.csv rows : $metadata_lines"
+echo "    audio files       : $audio_files"
+echo
+echo "    Phonemes, normalized audio and mel spectrograms are cached by piper1-gpl"
+echo "    during the first training epoch (--data.cache_dir)."
+echo
+
+result=0
+if [ $result -eq 0 ]; then
     echo
     echo
-    echo "    Successfully preprocessed dataset."
-    echo 
+    echo "    Successfully validated dataset."
+    echo
     echo "    Press <Enter> to continue"
     read
     echo
 else
-    echo  "piper_train.preprocess failed.  Press <Enter> to exit."
+    echo  "dataset validation failed.  Press <Enter> to exit."
     read
     exit 1
 fi

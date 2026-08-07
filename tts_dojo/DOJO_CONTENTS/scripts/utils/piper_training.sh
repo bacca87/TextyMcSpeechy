@@ -1,6 +1,6 @@
 #!/bin/bash
-# scripts/piper_training.sh - Runs training inside docker container.
-# Expects one parameter:  a relative path to a starting checkpoint file
+# scripts/piper_training.sh - Runs training inside docker container (piper1-gpl).
+# Expects one parameter:  a path (container-side) to a starting checkpoint file
 echo "Running piper_training.sh"
 
 trap "kill 0" SIGINT
@@ -14,12 +14,15 @@ TRAIN_FROM_SCRATCH_FILE="../target_voice_dataset/.SCRATCH"
 # file containing quality setting for this dojo set by link_dataset.sh
 QUALITY_FILE="../target_voice_dataset/.QUALITY"
 
-# folder where piper creates checkpoint files.   
-# Must be purged prior to starting training run to ensure new checkpoints always arrive in checkpoints/version_0 folder 
-LIGHTNING_LOGS_LOCATION="../training_folder/lightning_logs"
+# dataset configuration (NAME, DESCRIPTION, ESPEAK_LANGUAGE_IDENTIFIER, ...)
+DATASET_CONF_FILE="../target_voice_dataset/dataset.conf"
+
+# sampling rate and dataloader worker count written by the dataset tools
+SAMPLING_RATE_FILE=".SAMPLING_RATE"
+MAX_WORKERS_FILE=".MAX_WORKERS"
 
 # infer name of dojo and voice from directory name
-DOJO_NAME=$(basename "$(dirname "$PWD")")  # this script runs from <name>_dojo/scripts so need parent directory   
+DOJO_NAME=$(basename "$(dirname "$PWD")")  # this script runs from <name>_dojo/scripts so need parent directory
 VOICE_NAME=$(echo "$DOJO_NAME" | sed 's/_dojo$//')
 
 # sanity check for current directory
@@ -34,30 +37,33 @@ if [ -e $SETTINGS_FILE ]; then
 else
     echo "$0 - settings not found"
     echo "     expected location: $SETTINGS_FILE"
-    echo 
+    echo
     echo "press <enter> to exit"
     exit 1
 fi
-
 
 if [[ -f $TRAIN_FROM_SCRATCH_FILE ]]; then
     TRAIN_FROM_SCRATCH=$(cat $TRAIN_FROM_SCRATCH_FILE)
 else
     echo "Error: .SCRATCH file not found: $TRAIN_FROM_SCRATCH_FILE ."
-    exit 1 
+    exit 1
 fi
-
-# check for .QUALITY file created by previous run
 
 if [ ! -e "$QUALITY_FILE" ]; then
     echo "        Unable to proceed - file missing: $QUALITY_FILE"
     echo "        Please reconfigure this dojo's dataset.  Exiting."
     exit 1
 fi
-            
+
+if [ ! -e "$DATASET_CONF_FILE" ]; then
+    echo "        Unable to proceed - file missing: $DATASET_CONF_FILE"
+    echo "        Please reconfigure this dojo's dataset.  Exiting."
+    exit 1
+fi
+
 quality=$(cat $QUALITY_FILE)
 if [ "$quality" = "L" ]; then
-    quality_str="x-low"  # `low` is not a parameter accepted by piper_train, only x-low
+    quality_str="x-low"
 elif [ "$quality" = "M" ]; then
     quality_str="medium"
 elif [ "$quality" = "H" ]; then
@@ -67,73 +73,67 @@ else
     exit 1
 fi
 
+source $DATASET_CONF_FILE
 
+if [ -e "$SAMPLING_RATE_FILE" ]; then
+    sample_rate=$(cat $SAMPLING_RATE_FILE)
+else
+    sample_rate=22050
+fi
 
-# Check if the starting checkpoint parameter is provided
+if [ -e "$MAX_WORKERS_FILE" ]; then
+    num_workers=$(cat $MAX_WORKERS_FILE)
+else
+    num_workers=8
+fi
+
 if [ -z "$1" ]; then
   echo "No starting checkpoint received."
-  
 fi
 
 starting_checkpoint=$1
-   
 
-# run piper training in docker container (textymcspeechy-piper)
-train_from_scratch(){
-docker exec textymcspeechy-piper bash -c "cd /app/piper/src/python \
-    && python -m piper_train \
-    --dataset-dir "/app/tts_dojo/$DOJO_NAME/training_folder/" \
-    --accelerator gpu \
-    --devices 1 \
-    --batch-size $PIPER_BATCH_SIZE\
-    --validation-split 0.0 \
-    --num-test-examples 0 \
-    --max_epochs 30000 \
-    --checkpoint-epochs $PIPER_SAVE_CHECKPOINT_EVERY_N_EPOCHS \
-    --precision 32 \
-    --quality $quality_str
-"
-}
-
-train_from_pretrained(){
-docker exec textymcspeechy-piper bash -c "cd /app/piper/src/python \
-    && python -m piper_train \
-    --dataset-dir "/app/tts_dojo/$DOJO_NAME/training_folder/" \
-    --accelerator gpu \
-    --devices 1 \
-    --batch-size $PIPER_BATCH_SIZE\
-    --validation-split 0.0 \
-    --num-test-examples 0 \
-    --max_epochs 30000 \
-    --resume_from_checkpoint "$starting_checkpoint" \
-    --checkpoint-epochs $PIPER_SAVE_CHECKPOINT_EVERY_N_EPOCHS \
-    --precision 32 \
-    --quality $quality_str
-"
-}
-
-# lightning_logs is intentionally NOT purged between runs so that TensorBoard
-# keeps the full training history (each run creates a new version_N directory).
-echo "Train from scratch = $TRAIN_FROM_SCRATCH"
-echo "           Quality = $quality_str" 
-
-if [ $TRAIN_FROM_SCRATCH == "true" ]; then
-    echo
-    echo
-    echo
-    echo "Training model from scratch."
-    echo
-    echo
-    train_from_scratch
-else
-    echo
-    echo
-    echo "Training from pretrained checkpoint file:"
-    echo "    $starting_checkpoint"
-    echo
-    echo
-    train_from_pretrained
+if [ "$TRAIN_FROM_SCRATCH" = "true" ]; then
+    echo "Training model from scratch (ignoring any starting checkpoint)."
+    starting_checkpoint=""
 fi
 
+TRAINING_DIR="/app/tts_dojo/$DOJO_NAME/training_folder"
+DATASET_DIR="/app/tts_dojo/$DOJO_NAME/target_voice_dataset"
+
+# cache location: CACHE_DIR from SETTINGS.txt (default ../training_folder/cache,
+# relative to the dojo) or an absolute path (e.g. a fast docker volume)
+CACHE_DIR=${CACHE_DIR:-../training_folder/cache}
+case "$CACHE_DIR" in
+    /*) DOCKER_CACHE_DIR="$CACHE_DIR" ;;
+    *)  DOCKER_CACHE_DIR="/app/tts_dojo/$DOJO_NAME/${CACHE_DIR#../}" ;;
+esac
+
+echo "Train from scratch = $TRAIN_FROM_SCRATCH"
+echo "           Quality = $quality_str"
+echo "   espeak voice    = $ESPEAK_LANGUAGE_IDENTIFIER"
+echo "   sample rate     = $sample_rate"
+
+# write the fit parameters (read by utils/piper_fit.py inside the container)
+cat > ../training_folder/fit_params.json <<EOF
+{
+    "voice_name": "$VOICE_NAME",
+    "csv_path": "$DATASET_DIR/metadata.csv",
+    "audio_dir": "$DATASET_DIR/wav",
+    "cache_dir": "$DOCKER_CACHE_DIR",
+    "config_path": "$TRAINING_DIR/config.json",
+    "espeak_voice": "$ESPEAK_LANGUAGE_IDENTIFIER",
+    "sample_rate": "$sample_rate",
+    "batch_size": "$PIPER_BATCH_SIZE",
+    "num_workers": "$num_workers",
+    "validation_split": "$VALIDATION_SPLIT",
+    "quality": "$quality",
+    "training_dir": "$TRAINING_DIR",
+    "max_epochs": "30000",
+    "ckpt_path": "$starting_checkpoint"
+}
+EOF
+
+docker exec textymcspeechy-piper python3 "/app/tts_dojo/$DOJO_NAME/scripts/utils/piper_fit.py" "$TRAINING_DIR/fit_params.json"
 
 exit 0
