@@ -149,38 +149,40 @@ check_and_copy_ckpt() {
     fi
     local dest_folder="$VOICE_CHECKPOINTS_FOLDER"
 
-    # Check if .ckpt file exists in source folder
-    local ckpt_file=$(find "$source_folder" -maxdepth 1 -type f -name "*.ckpt" | head -n 1) 2>&1
+    # Collect ALL unsaved .ckpt files in the source folder.
+    # piper1-gpl writes one checkpoint per monitored metric (val_mel, val_mos)
+    # every epoch, so there may be several files that need saving.
+    local unsaved_ckpts=()
+    while IFS= read -r ckpt_file; do
+        if [[ -n "$ckpt_file" ]] && [[ ! -f "$dest_folder/$(basename "$ckpt_file")" ]]; then
+            unsaved_ckpts+=("$ckpt_file")
+        fi
+    done < <(find "$source_folder" -maxdepth 1 -type f -name "*.ckpt" 2>/dev/null | sort)
 
-    if [[ -z "$ckpt_file" ]]; then
-        #echo "No .ckpt file found in $source_folder."
+    if [[ ${#unsaved_ckpts[@]} -eq 0 ]]; then
         echo "    Dojo is clean.  Proceeding."
         echo
         return 0
     fi
 
-    local ckpt_filename=$(basename "$ckpt_file")
-
-    # Check if the same file exists in destination folder
-    if [[ -f "$dest_folder/$ckpt_filename" ]]; then
-        echo "    Dojo is ready.  Proceeding."
+    echo
+    echo "    ${#unsaved_ckpts[@]} unsaved checkpoint(s) from a previous session were found:"
+    for ckpt_file in "${unsaved_ckpts[@]}"; do
+        echo "        $(basename "$ckpt_file")"
+    done
+    echo "    They will be deleted when training starts unless you save them now."
+    echo
+    read -p "    Do you want to save them? (y/n): " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        for ckpt_file in "${unsaved_ckpts[@]}"; do
+            cp "$ckpt_file" "$dest_folder/"
+            echo "        $(basename "$ckpt_file") was saved in $dest_folder."
+        done
         echo
-        return 0
     else
         echo
-        echo "    An unsaved checkpoint from a previous session was found in $ckpt_file."
-        echo "    It will be deleted when training starts unless you save it now."
+        echo "    Proceeding."
         echo
-        read -p "    Do you want to save it? (y/n): " choice
-        if [[ "$choice" =~ ^[Yy]$ ]]; then
-            cp "$ckpt_file" "$dest_folder/"
-            echo "        $ckpt_filename was saved in $dest_folder."
-            echo
-        else
-            echo
-            echo "    Proceeding."
-            echo
-        fi
     fi
 }
 

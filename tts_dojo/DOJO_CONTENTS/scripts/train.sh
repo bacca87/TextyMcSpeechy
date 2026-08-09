@@ -110,18 +110,37 @@ set_train_from_scratch(){
 
 
 empty_checkpoint_folder(){
-# Copy checkpoint file from prior run to allow user to resume from there and empty the folder
-    local ckpt_dir="$LIGHTNING_LOGS_LOCATION/version_0/checkpoints"
+# Copy all checkpoint files from the most recent lightning_logs version dir
+# into voice_checkpoints, and only empty lightning_logs if every checkpoint
+# made it into voice_checkpoints (check_and_copy_ckpt may have skipped the
+# save, and lightning_logs must never be deleted while a checkpoint is still
+# only there).
+    local newest_version_dir
+    newest_version_dir=$(ls -1dt "$LIGHTNING_LOGS_LOCATION"/version_*/ 2>/dev/null | head -n 1)
+    if [[ -z "$newest_version_dir" ]]; then
+        return 0  # no previous training logs, nothing to preserve
+    fi
+    local ckpt_dir="$newest_version_dir/checkpoints"
+    local missing_count=0
     if ls "$ckpt_dir"/*.ckpt >/dev/null 2>&1; then
-        cp "$ckpt_dir"/*.ckpt "./$VOICE_CHECKPOINTS_DIRNAME/" >/dev/null 2>&1
+        for ckpt_file in "$ckpt_dir"/*.ckpt; do
+            ckpt_filename=$(basename "$ckpt_file")
+            if [ ! -f "./$VOICE_CHECKPOINTS_DIRNAME/$ckpt_filename" ]; then
+                cp "$ckpt_file" "./$VOICE_CHECKPOINTS_DIRNAME/" >/dev/null 2>&1
+                if [ ! -f "./$VOICE_CHECKPOINTS_DIRNAME/$ckpt_filename" ]; then
+                    echo "WARNING: failed to copy $ckpt_filename"
+                    missing_count=$((missing_count + 1))
+                fi
+            fi
+        done
     fi
     sleep 1
-    if ls "./$VOICE_CHECKPOINTS_DIRNAME"/*.ckpt >/dev/null 2>&1; then
+    if [ "$missing_count" -eq 0 ]; then
         # note: this command is duplicated in piper_training.sh in order to allow quck restarts in the tmux session
         # (eg. recovering from a memory allocation error)
         rm -r "$LIGHTNING_LOGS_LOCATION"
     else
-        echo "WARNING: nessun checkpoint salvato in $VOICE_CHECKPOINTS_DIRNAME - NON elimino $LIGHTNING_LOGS_LOCATION"
+        echo "WARNING: $missing_count checkpoint(s) non copiati in $VOICE_CHECKPOINTS_DIRNAME - NON elimino $LIGHTNING_LOGS_LOCATION"
     fi
 }
 
