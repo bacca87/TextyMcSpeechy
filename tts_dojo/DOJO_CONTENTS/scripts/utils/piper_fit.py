@@ -59,7 +59,20 @@ dm = VitsDataModule(
 )
 
 CKPT = p.get("ckpt_path")
-if CKPT:
+FINE_TUNE_LR = p.get("learning_rate")
+if FINE_TUNE_LR:
+    # Fine-tuning mode: load ALL weights from the checkpoint but start a FRESH
+    # optimizer/scheduler with the explicit learning rate from SETTINGS.txt.
+    # piper1-gpl's warmstart_ckpt copies every matching-shape parameter and
+    # leaves the optimizer fresh -- required when resuming from a checkpoint
+    # whose LR scheduler is already decayed (eg a finished training run).
+    print("Fine-tuning weights from checkpoint (fresh optimizer, "
+          f"lr_g={FINE_TUNE_LR}):", CKPT)
+    model = VitsModel(**MODEL_ARGS, learning_rate=FINE_TUNE_LR,
+                      learning_rate_d=float(FINE_TUNE_LR) / 2,
+                      warmstart_ckpt=CKPT)
+    resume_ckpt = None
+elif CKPT:
     # New-format checkpoints (epoch=N-val_mel=.../epoch=N-val_mos=...) are
     # Lightning 2.x checkpoints: hand them to trainer.fit(ckpt_path=...) so
     # training resumes at the saved epoch with optimizer/scheduler state.
