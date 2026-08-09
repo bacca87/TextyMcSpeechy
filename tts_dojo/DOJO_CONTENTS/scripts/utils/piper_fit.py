@@ -68,7 +68,7 @@ if FINE_TUNE_LR:
     # whose LR scheduler is already decayed (eg a finished training run).
     print("Fine-tuning weights from checkpoint (fresh optimizer, "
           f"lr_g={FINE_TUNE_LR}):", CKPT)
-    model = VitsModel(**MODEL_ARGS, learning_rate=FINE_TUNE_LR,
+    model = VitsModel(**MODEL_ARGS, learning_rate=float(FINE_TUNE_LR),
                       learning_rate_d=float(FINE_TUNE_LR) / 2,
                       warmstart_ckpt=CKPT)
     resume_ckpt = None
