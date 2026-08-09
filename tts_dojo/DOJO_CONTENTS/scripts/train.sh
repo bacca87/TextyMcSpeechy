@@ -751,6 +751,7 @@ get_starting_checkpoint_recommendation  # sets global var checkpoint_recommendat
 if [[ "$has_override" = true ]]; then   
     echo "Use manual override: $override_epoch"
     trainer_starting_checkpoint=$override_checkpoint_file
+    echo -ne "${CYAN}Press ENTER to begin training with the override${RESET}"
     read    
 fi
     
