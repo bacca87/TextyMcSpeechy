@@ -172,7 +172,7 @@ if [ ! -d "$AUDIO_DIR" ]; then
 fi
 
 metadata_lines=$(wc -l < "$METADATA_CSV" | tr -d ' ')
-audio_files=$(find "$AUDIO_DIR" -name "*.wav" | wc -l | tr -d ' ')
+audio_files=$(find -L "$AUDIO_DIR" -name "*.wav" | wc -l | tr -d ' ')
 echo "    metadata.csv rows : $metadata_lines"
 echo "    audio files       : $audio_files"
 echo

@@ -42,7 +42,7 @@ count_wav_files() {
         echo "Error: directory does not exist"
         return 1
     fi
-    local count=$(find -L "$directory" -maxdepth 1 -type f \( -iname "*.wav" \) | wc -l)
+    local count=$(find -L "$directory" -type f \( -iname "*.wav" \) | wc -l)
     echo "$count"
 }
 
