@@ -113,6 +113,7 @@ echo "Train from scratch = $TRAIN_FROM_SCRATCH"
 echo "           Quality = $quality_str"
 echo "   espeak voice    = $ESPEAK_LANGUAGE_IDENTIFIER"
 echo "   sample rate     = $sample_rate"
+echo "   learning rate   = ${FINE_TUNE_LR:-<inherit checkpoint>}"
 
 # write the fit parameters (read by utils/piper_fit.py inside the container)
 cat > ../training_folder/fit_params.json <<EOF
@@ -130,7 +131,8 @@ cat > ../training_folder/fit_params.json <<EOF
     "quality": "$quality",
     "training_dir": "$TRAINING_DIR",
     "max_epochs": "30000",
-    "ckpt_path": "$starting_checkpoint"
+    "ckpt_path": "$starting_checkpoint",
+    "learning_rate": "${FINE_TUNE_LR:-}"
 }
 EOF
 
