@@ -16,7 +16,9 @@ CACHE_DIR=../training_folder/cache
      
 
 # Checkpoint grabber settings
-AUTO_SAVE_EVERY_NTH_CHECKPOINT_FILE=25   
+# piper1-gpl writes one checkpoint file per monitored metric (val_mel + val_mos)
+# every epoch, so the auto-save interval counts EPOCHS, not checkpoint files.
+AUTO_SAVE_EVERY_NTH_EPOCH=2
 START_WITH_AUTO_SAVE=ON
 MINIMUM_DRIVE_SPACE_GB=20             # Stop saving checkpoint files when space gets this low
 DRIVE_SPACE_WARNING_THRESHOLD_GB=20   # Warn about low space when within this many GB of minimum 

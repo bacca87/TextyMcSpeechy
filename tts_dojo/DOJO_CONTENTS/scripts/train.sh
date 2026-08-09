@@ -658,7 +658,7 @@ start_tmux_processes(){
     tmux send-keys -t "${TMUX_EXPORTER_PANE:-0.2}" "clear && echo 'Ready to export voice models' && read " Enter
 
     # launch the checkpoint grabber (checkpoint_grabber.sh)
-    tmux send-keys -t "${TMUX_GRABBER_PANE:-0.3}" "bash utils/checkpoint_grabber.sh --save_every ${AUTO_SAVE_EVERY_NTH_CHECKPOINT_FILE} ../voice_checkpoints" Enter
+    tmux send-keys -t "${TMUX_GRABBER_PANE:-0.3}" "bash utils/checkpoint_grabber.sh --save_every ${AUTO_SAVE_EVERY_NTH_EPOCH:-${AUTO_SAVE_EVERY_NTH_CHECKPOINT_FILE:-2}} ../voice_checkpoints" Enter
     
     # launch the control console (/utils/_control_console.sh)
     tmux send-keys -t "${TMUX_CONTROL_PANE:-0.5}" "bash utils/_control_console.sh" Enter
@@ -673,7 +673,7 @@ show_setup(){
     echo -e "${GREEN}Training configuration from scripts/SETTINGS.txt:${RESET}"
     echo
     echo -e "        ${PURPLE}CHECKPOINT GRABBER SETTINGS (checkpoint_grabber.sh)${RESET}"
-    echo -e "                         Save checkpoint every: ${CYAN}$AUTO_SAVE_EVERY_NTH_CHECKPOINT_FILE${RESET} epoch(s)."
+    echo -e "                         Save checkpoint every: ${CYAN}${AUTO_SAVE_EVERY_NTH_EPOCH:-${AUTO_SAVE_EVERY_NTH_CHECKPOINT_FILE:-2}}${RESET} epoch(s)."
     echo -e "            Abort if below minimum drive space: ${CYAN}$MINIMUM_DRIVE_SPACE_GB${RESET} GB"
     echo -e "             warn about low drive space within: ${CYAN}$DRIVE_SPACE_WARNING_THRESHOLD_GB${RESET} GB of minimum"
     echo 
