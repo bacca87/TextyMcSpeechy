@@ -10,7 +10,9 @@ Reads a JSON parameter file (written by utils/piper_training.sh).
 Usage: python3 piper_fit.py <params.json>
 """
 import json
+import os
 import pathlib
+import re
 import sys
 
 import lightning as L
@@ -56,12 +58,25 @@ dm = VitsDataModule(
     validation_split=float(p["validation_split"]),
 )
 
-if p.get("ckpt_path"):
-    print("Resuming from checkpoint:", p["ckpt_path"])
-    model = VitsModel.load_from_checkpoint(p["ckpt_path"], map_location="cpu")
+CKPT = p.get("ckpt_path")
+if CKPT:
+    # New-format checkpoints (epoch=N-val_mel=.../epoch=N-val_mos=...) are
+    # Lightning 2.x checkpoints: hand them to trainer.fit(ckpt_path=...) so
+    # training resumes at the saved epoch with optimizer/scheduler state.
+    if re.search(r"val_(?:mel|mos)=", os.path.basename(CKPT)):
+        print("Resuming from checkpoint (full state):", CKPT)
+        model = VitsModel(**MODEL_ARGS)
+        resume_ckpt = CKPT
+    else:
+        # Legacy piper_train checkpoints (epoch=N-step=M, Lightning 1.x) have
+        # no compatible optimizer state: load weights only and restart fresh.
+        print("Resuming weights from legacy checkpoint:", CKPT)
+        model = VitsModel.load_from_checkpoint(CKPT, map_location="cpu")
+        resume_ckpt = None
 else:
     print("Training from scratch")
     model = VitsModel(**MODEL_ARGS)
+    resume_ckpt = None
 
 trainer = L.Trainer(
     max_epochs=int(p.get("max_epochs", 30000)),
@@ -71,4 +86,4 @@ trainer = L.Trainer(
     callbacks=_DEFAULT_CALLBACKS,
     default_root_dir=p["training_dir"],
 )
-trainer.fit(model, datamodule=dm)
+trainer.fit(model, datamodule=dm, ckpt_path=resume_ckpt)
