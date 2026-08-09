@@ -71,7 +71,10 @@ fi
 
 clear # clear the screen
 # load constants from values sourced from SETTINGS, supply defaults if not specified
-PIPER_STEP=${PIPER_SAVE_CHECKPOINT_EVERY_N_EPOCHS:-5}
+# piper1-gpl (piper.train fit) writes one checkpoint file per monitored metric
+# (val_mel + val_mos) at the end of every epoch, so PIPER_STEP is 1 epoch and
+# auto-save counts unique epochs rather than checkpoint files.
+PIPER_STEP=1
 MIN_GB=${SETTINGS_GRABBER_MINIMUM_DRIVE_SPACE_GB:-20}
 MIN_GB_WARNING=${DRIVE_SPACE_WARNING_THRESHOLD_GB:-10}
 MINIMUM_DRIVE_SPACE=$((MIN_GB * 1024 * 1024))  # 20 GB in KB
@@ -80,8 +83,10 @@ last_checkpoint_file=""
 last_checkpoint_size=0
 last_export_duration_seconds=0
 auto_save_status=$START_WITH_AUTO_SAVE  #SETTINGS.txt
-auto_save_rate=$AUTO_SAVE_EVERY_NTH_CHECKPOINT_FILE
-checkpoints_until_save=$auto_save_rate
+# number of epochs between auto-saves (SETTINGS AUTO_SAVE_EVERY_NTH_EPOCH)
+auto_save_rate=${AUTO_SAVE_EVERY_NTH_EPOCH:-${AUTO_SAVE_EVERY_NTH_CHECKPOINT_FILE:-2}}
+last_saved_epoch=-1
+epochs_until_save=0
 
 
 export_model(){
@@ -174,7 +179,11 @@ calculate_avg_time_per_checkpoint() {
 calculate_estimated_time_until_next_saved_checkpoint() {
     if [ $last_epoch_seen -ge $first_epoch ]; then       
         if [ $checkpoints_seen -gt 1 ]; then
-            estimated_time=$((checkpoints_until_save * avg_time_per_checkpoint))
+            epochs_until_save=$((next_epoch_to_save - last_epoch_seen))
+            if [ $epochs_until_save -lt 0 ]; then
+                epochs_until_save=0
+            fi
+            estimated_time=$((epochs_until_save * avg_time_per_checkpoint))
             estimated_time_hours=$(printf "%02d" $((estimated_time / 3600)))
             estimated_time_minutes=$(printf "%02d" $(((estimated_time % 3600) / 60)))
             estimated_time_seconds=$(printf "%02d" $((estimated_time % 60)))
@@ -214,8 +223,8 @@ update_grabber_status() {
     
     echo
     echo -e "       Available disk space : $available_space_gb GB    Stop saving below: $MIN_GB GB" 
-    echo -e " Piper generates file every : $PIPER_STEP epochs"
-    echo -e "      Save checkpoint every : $auto_save_rate checkpoint files"   
+    echo -e " Piper generates file every : $PIPER_STEP epoch(s)"
+    echo -e "      Save checkpoint every : $auto_save_rate epoch(s)"   
     echo -e "number of checkpoints saved : $checkpoints_copied"
     echo -e "      Saving checkpoints to : ${DOJO_NAME}/$(basename $save_dir)"
     echo -e "           First epoch seen : $first_epoch             most recent epoch seen: $last_epoch_seen"
@@ -225,9 +234,9 @@ update_grabber_status() {
     echo -e "      Last checkpoint seen : $(basename "$last_checkpoint_file") (${last_checkpoint_size} MB)   Last export took : $last_export_duration_seconds seconds"   
     echo -e "       Next epoch # to save : $next_epoch_to_save"
     echo -e "       Time until next save : ${estimated_time_hours}h ${estimated_time_minutes}m ${estimated_time_seconds}s"
-    echo -e "checkpoints until next save : $checkpoints_until_save"
+    echo -e "         epochs until save : $epochs_until_save"
     echo -e ""
-    echo -e " Auto-save is: $auto_save_status   Auto-save: once every $auto_save_rate file(s)"
+    echo -e " Auto-save is: $auto_save_status   Auto-save: once every $auto_save_rate epoch(s)"
     echo -e ""
     echo -e "Commands available from this pane:"
     echo -e " [T]oggle automatic checkpoint saving on/off"
@@ -262,7 +271,6 @@ save_checkpoint(){
 increase_interval(){
 # increases time between saving checkpoint files
    auto_save_rate=$((auto_save_rate + 1))
-   checkpoints_until_save=$auto_save_rate
    next_epoch_to_save=$((last_epoch_seen + auto_save_rate * PIPER_STEP))
 }
 
@@ -271,7 +279,6 @@ decrease_interval(){
 # decreases time between saving checkpoint files
    if [ "$auto_save_rate" -ge 2 ]; then
        auto_save_rate=$((auto_save_rate - 1))
-       checkpoints_until_save=$auto_save_rate
        next_epoch_to_save=$((last_epoch_seen + auto_save_rate * PIPER_STEP))
    fi
 }
@@ -330,7 +337,10 @@ resolve_checkpoints_dir() {
 
 
 process_file() {
-# handle the arrival of a new checkpoint file
+# handle the arrival of a new checkpoint file.
+# piper1-gpl writes one checkpoint file per monitored metric (val_mel and
+# val_mos) at the end of every epoch, so a new epoch is detected by comparing
+# the epoch number in the filename instead of counting files.
     local file_path=$1
     local filename=$(basename "$file_path")
     if [[ $filename =~ ^epoch=([0-9]+)-.+\.ckpt$ ]]; then
@@ -343,8 +353,11 @@ process_file() {
             start_time_human=$(date +"%I:%M %p" -d @$start_time)
         fi
 
-        last_epoch_seen=$epoch
-        checkpoints_seen=$((checkpoints_seen + PIPER_STEP))
+        # only count each epoch once, even though two files arrive per epoch
+        if [ "$epoch" -gt "$last_epoch_seen" ]; then
+            last_epoch_seen=$epoch
+            checkpoints_seen=$((checkpoints_seen + PIPER_STEP))
+        fi
 
         while lsof "$file_path" >/dev/null 2>&1; do
             sleep 1
@@ -358,8 +371,9 @@ process_file() {
             return
         fi
         
-        if [ "$checkpoints_until_save" -eq "0" ]; then
-             checkpoints_until_save=$auto_save_rate
+        # save once every auto_save_rate epochs (regardless of how many files
+        # piper writes per epoch)
+        if [ "$auto_save_status" = "ON" ] && [ "$epoch" -ge "$next_epoch_to_save" ]; then
              next_epoch_to_save=$((last_epoch_seen + auto_save_rate * PIPER_STEP)) 
              
              # This section should only run if file with same name does not exist in save_dir already.
@@ -380,7 +394,6 @@ process_file() {
             fi
         fi
 
-        checkpoints_until_save=$((checkpoints_until_save - 1))        
         last_checkpoint_file=$file_path
         last_checkpoint_size=$(du -m "$file_path" | cut -f1)
     fi
@@ -446,7 +459,7 @@ check_inotifywait  # make sure dependency is installed
 
 version_number=0
 
-auto_save_rate=${AUTO_SAVE_EVERY_NTH_CHECKPOINT_FILE:-10}
+auto_save_rate=${AUTO_SAVE_EVERY_NTH_EPOCH:-${AUTO_SAVE_EVERY_NTH_CHECKPOINT_FILE:-2}}
 
 while [[ "$1" == --* ]]; do
     case "$1" in
@@ -505,7 +518,7 @@ while [ ! -d "$checkpoints_dir" ]; do
     echo "Elapsed: ${wait_min}m ${wait_sec}s   |   $training_status"
     echo
     echo "The checkpoints directory appears when piper saves its first checkpoint"
-    echo "(every ${PIPER_STEP} epochs). Epoch pace is visible in TensorBoard at"
+    echo "(every epoch). Epoch pace is visible in TensorBoard at"
     echo "http://localhost:6006 or in the PIPER TRAINING pane output."
     sleep 10
 done
