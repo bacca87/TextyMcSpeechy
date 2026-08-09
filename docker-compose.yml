@@ -13,7 +13,7 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     user: "${TMS_USER_ID:-1000}:${TMS_GROUP_ID:-1000}"
     tty: true
-    shm_size: 1g  # needed by DataLoader workers (default 64MB /dev/shm crashes them)
+    shm_size: 8g  # needed by DataLoader workers (default 64MB /dev/shm crashes them); 1g overflows on large datasets (batch 10, 10 workers, prefetch 4)
     ports:
       - "6006:6006"  # open tensorboard server port
 
