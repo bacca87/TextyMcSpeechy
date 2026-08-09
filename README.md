@@ -105,6 +105,7 @@ sudo bash setup.sh
 ```
 docker image pull domesticatedviking/textymcspeechy-piper:latest
 ```
+Note: the prebuilt image on Docker Hub is not updated for the piper1-gpl training stack. Build the image locally instead (see below); `run_container.sh` defaults to the local build.
 - To build your own image from the `Dockerfile` and `docker-compose.yml` in the main `TextyMcSpeechy` directory, change to that directory and run:
 ```
 docker compose build
