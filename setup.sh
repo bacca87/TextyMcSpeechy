@@ -110,8 +110,11 @@ clear
 echo 
 echo "What kind of docker package do you want to use for textymcspeechy-piper?"
 echo 
-echo "     1.  I want to use a pre-built image from dockerhub. (recommended)"
-echo "     2.  I want to use a local image that I will build myself."
+echo "     NOTE: the prebuilt dockerhub image is not updated for the piper1-gpl"
+echo "           training stack, so building the image locally is required."
+echo
+echo "     1.  I want to use a pre-built image from dockerhub."
+echo "     2.  I want to use a local image that I will build myself. (recommended)"
 echo
 read -p "please choose 1 or 2: " response
 if [[ "$response" == 1 ]]; then
