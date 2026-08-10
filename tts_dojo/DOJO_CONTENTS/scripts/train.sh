@@ -534,6 +534,13 @@ check_manual_override_dir(){
     local override_ckpt=$(get_highest_epoch_ckpt "$DOJO_DIR/$OVERRIDE_DIRNAME")
     if [[ -f "$override_ckpt" ]]; then
         override_epoch=$(get_epoch_number $override_ckpt)
+        # find the highest saved checkpoint (if any) so the user can choose
+        # to ignore the override in favor of a more recent one
+        local saved_epoch_ckpt=$(get_highest_epoch_ckpt "$DOJO_DIR/$VOICE_CHECKPOINTS_DIRNAME")
+        local saved_epoch=""
+        if [[ -f "$saved_epoch_ckpt" ]]; then
+            saved_epoch=$(get_epoch_number $saved_epoch_ckpt)
+        fi
         clear
         echo
         echo
@@ -541,12 +548,42 @@ check_manual_override_dir(){
         echo -e "        file:  $(basename $override_ckpt)"
         echo -e "  located in:  $DOJO_DIR/$OVERRIDE_DIRNAME"
         echo -e "       epoch:  $override_epoch"
-        echo -e "${RED}to cancel override, remove all ${YELLOW}.ckpt${RED} files from ${YELLOW}$OVERRIDE_DIRNAME${RESET}"
         echo
-        echo -ne "${CYAN}Press ENTER to begin training${RESET}"
-        read
-        has_override=true
-        override_checkpoint_file=$override_ckpt
+        echo -e "        Please select an option:"
+        echo
+        echo -e "        1. Use the override checkpoint (epoch $override_epoch) (recommended)"
+        if [[ -n "$saved_epoch" ]]; then
+            echo -e "        2. Ignore the override and use the highest saved checkpoint (epoch $saved_epoch)"
+        else
+            echo -e "        2. Ignore the override and use the pretrained/saved checkpoint"
+        fi
+        echo -e "        3. Quit"
+        echo
+        echo -ne "        What would you like to do (1-3): "
+        read choice
+        # substitute action if user only pushes enter
+        if [[ "$choice" = "" ]]; then
+            choice="1"
+            echo "Quick choice: $choice"
+        fi
+        case "$choice" in
+            1)
+                has_override=true
+                override_checkpoint_file=$override_ckpt
+                ;;
+            2)
+                echo "Ignoring manual override; using the highest saved checkpoint."
+                has_override=false
+                ;;
+            3)
+                echo "Exiting."
+                exit 1
+                ;;
+            *)
+                echo "Invalid option. Exiting."
+                exit 1
+                ;;
+        esac
     fi
 }
 
